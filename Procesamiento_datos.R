@@ -15,7 +15,6 @@ library(foreach)
 library(cluster)
 library(fastcluster)
 library(graphics)
-
 library(factoextra)
 library(FactoMineR)
 library(readr)
@@ -49,35 +48,32 @@ BD<- read.csv("covid_del_sum.csv",sep = ";")
 #filas_aleatorias <- sample(1:n, 500)  # Seleccionar 100 filas al azar
 
 # Crear un nuevo dataframe con las 100 filas aleatorias
-#BD <- BD[filas_aleatorias, ]
+# BD <- BD[filas_aleatorias, ]
 
-
-
-#Poner rownames
+# Poner rownames
 rownames(BD)<-BD$study_id
 
-#BINARIZAR VARIABLES
+# BINARIZAR VARIABLES
 BD[BD == "Yes"] <- 1
 BD[BD == "No"] <- 0
 BD[BD == "Unknown"] <- NA
 BD <- BD %>%
   mutate(position_day1.y = ifelse(position_day1.y == "Prone", 0, 1))
 
-#PONER RAZAS EN OTHER
+# PONER RAZAS EN OTHER
 frequencies <- table(BD$enr_race_final.y)
 categories_to_change <- names(frequencies[frequencies < 25])
 BD$enr_race_final.y[BD$enr_race_final.y %in% categories_to_change] <- "Other"
 
-#GCS_low 98---> NAs
+# GCS_low 98---> NAs
 BD$daily_gcs_low.x[BD$daily_gcs_low.x == 98] <- NA
 
-######################
 # Crear una nueva variable SUPERVIVENCIA en el dataframe BD
 BD$SUPERVIVENCIA <- ifelse(BD$ever_del_or_coma == 1, 
                            BD$dcfd_final.y + BD$del_or_coma_duration_exp.y, 
                            BD$dcfd_final.y)
 
-######################
+# Supervivencia 2.0.
 
 BD$SUPERVIVENCIA2 <- ifelse(is.na(BD$del_or_coma_duration_exp), 0, BD$del_or_coma_duration_exp)
 
@@ -92,36 +88,6 @@ filas_sin_NA <- complete.cases(BD[, c("dcfd_final.y",
                                       #"ever_hypodel_f.y"
 )])
 BD <- BD[filas_sin_NA, ]
-
-#############################
-# FILTRO PACIENTES OUTLIERS #
-#############################
-
-# FILTRO PACIENTES MUESTRA RAZA INPUTS + TODA LA MUESTRA
-# BD <- subset(BD, !(rownames(BD) %in% c("015-081", 
-#                                        "018-019"
-#                                        )))
-
-# # FILTRO PACIENTES MUESTRA RAZA OUTCOMES + TODA LA MUESTRA
-# BD <- subset(BD, !(rownames(BD) %in% c("028-002",
-#                                        "028-003",
-#                                        "028-092",
-#                                        "068-005",
-#                                        "068-033",
-#                                        "068-017",
-#                                        "068-020",
-#                                        "068-032",
-#                                        "068-036",
-#                                        "074-008",
-#                                        "018-019"
-#                                        )))
-
-# FILTRO PACIENTES MUESTRA RAZA OUTCOMES + SOLO DELIRIUM
-# BD <- subset(BD, !(rownames(BD) %in% c("074-008",
-#                                        "068-033",
-#                                        "028-002",
-#                                        "028-003"
-#                                        )))
 
 ###################################
 # QUITAR PACIENTES SIN DEL / COMA #
@@ -295,7 +261,8 @@ data_outcomes<-cbind(Neurological_status,
                     Length_of_Stay
                     )
 
-###
+# MINIANÁLISIS NA
+
 naValue = NA
 N = dim(data_inputs)[1]
 completenessMatrix <- !is.na(data_inputs)
@@ -315,7 +282,7 @@ plot_ly(x = sortResults$x*100, y = reorder(names(sortResults$x),sortResults$x), 
 # Vector variables con NAs
 variables_with_NAs <- colnames(data_inputs)[colMeans(is.na(data_inputs)) > 0]
 
-#Quitar variables mal anotadas
+# Quitar variables mal anotadas
 data_inputs <- data_inputs[, colMeans(is.na(data_inputs)) <= 0]
 
 una_sola_clase <- sapply(data_inputs, function(x) length(unique(x))) == 1
@@ -329,16 +296,16 @@ columnas_experiment <- colnames(data_inputs)
 
 ####################################
 # BINARIZAR VARIABLES CATEGÓRICAS ##
-##### EN DATA inputs ###########
 ####################################
+
 source("Categories2Binaries.R")
 data_inputs <- Categories2Binaries(data_inputs)
 data_outcomes<-Categories2Binaries(data_outcomes)
 dataExperiment<-cbind(data_inputs,data_outcomes)
 
-##############################
-# Quitar variables Charlson # 
 #############################
+# Quitar variables Charlson # * Nuestros compañeros clínicos querían ver los resultados 
+############################# * con y sin las siguientes variables de Charlson
 
 CharlsonOUT=T
 
@@ -369,8 +336,8 @@ if (CharlsonOUT == T) {
 }
 
 ####################################
-# Quitar variables correlacionadas # 
-####################################
+# Quitar variables correlacionadas # * En el biplot a continuación, se veía que las siguientes variables
+#################################### * se solapaban con otras. Con la opinión de los clínicos, se decidió quitarlas
 
 varcor=T
 
@@ -385,7 +352,7 @@ if (varcor == T) {
 }
 
 
-# PCA PRELIMINAR
+# PCA PRELIMINAR - BIPLOT
 
 res.pca <- PCA(data_inputs, scale.unit = T, graph = FALSE)
 plot(res.pca)
@@ -437,14 +404,13 @@ clean_data_with_pca <- function(data, num_components) {
 }
 
 components_to_analyze <- c(3, 8, 14, 21)  # Números de componentes principales a analizar
-clean_dfs <- list()
-
+clean_dfs <- list()                       # * 3, 8, 14 y 21 son los PCs para 20% / 40% / 60% / 80% variabilidad
+                                        
 for (num_cp in components_to_analyze) {
   clean_data <- clean_data_with_pca(data_inputs, num_cp)
   clean_dfs[[paste("CP", num_cp, "Original", sep = "")]] <- clean_data$original
   clean_dfs[[paste("CP", num_cp, "Scores", sep = "")]] <- clean_data$pca_scores
 }
-
 
 ####################
 # PLOT N según CPs #
@@ -470,8 +436,9 @@ for (num_cp in components_to_analyze) {
 # # Mostrar el gráfico
 # print(plot)
 
-# seguir con centroids_final.R ---->>>
-
+################################
+# SEGUIR CON centroids_final.R # ---->>>
+################################
 
 
 
