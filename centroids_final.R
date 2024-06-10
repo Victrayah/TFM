@@ -1,6 +1,5 @@
 # setwd("D:/2023_icu_delirium")
 # source("Procesamiento_datos.R")
-# source("functions_groupping2.R")
 # source("functions_groupping.R")
 
 #####
@@ -337,6 +336,158 @@ write.csv(df_final,"df_final_PC3_k4.csv")
 # beep(sound = 3)
 
 
+# Creamos una paleta de colores que va de verde a rojo con 101 matices
+colores <- colorRampPalette(c("red", "green"))(101)
+
+# Usamos el porcentaje como índice para los colores, asegurándonos de que sea al menos 1
+df_final$IndiceColor <- pmax(1, ceiling(df_final$Porcentaje))
+
+# Creamos el gráfico de barras con ggplot2
+ggplot(df_final, aes(x = ResolvedValue, y = Frecuencia, fill = IndiceColor)) +
+  geom_bar(stat = "identity") +
+  scale_fill_gradientn(colors = colores,
+                       name = "% Pacientes Sig",
+                       breaks = c(1, 25, 50, 75, 100),
+                       labels = c("0%", "25%", "50%", "75%", "100%")) +
+  labs(title = "Distribución muestra  - 14 Componentes Principales",
+       x = "Grupo", y = "Tamaño muestral") +
+  theme_minimal() +
+  theme(legend.position = "right")
+
+############
+# SCATTERS #
+############
+df_counts$robpac <- ifelse(df_counts$p_value < 0.05, df_counts$ResolvedValue, NA)
+
+# Suponiendo que df_counts es tu dataframe
+
+# Crear la variable plotly
+df_counts$plotly <- ifelse(!is.na(df_counts$robpac), paste("Robust patients group", df_counts$robpac),
+                           paste("No robust patients group", df_counts$ResolvedValue))
+
+table(df_counts$plotly)
+
+colores<-c(
+  "lightgreen",
+  "lightpink",
+  "lightblue",
+  "green",
+  "purple",
+  "blue"
+)
+
+axx <- list(
+  title = "1<sup>st</sup> component"
+)
+axy <- list(
+  title = "2<sup>nd</sup> component"
+)
+axz <- list(
+  title = "3<sup>rd</sup> component"
+)
+
+
+pClusters3d<-plot_ly(x = datosplot[,1],
+                     y = datosplot[,2],
+                     z = datosplot[,3],
+                     color = df_counts$plotly,
+                     #color = df_counts$ResolvedValue,
+                     colors = colores,
+                     type = "scatter3d", mode = "markers",
+                     marker = list(sizemode = 'area'),
+                     scene = 'sceneClusters') %>%
+  layout(title = "Scatter 3D", xaxis = axx, yaxis = axy) %>%
+  config(displaylogo = FALSE)
+
+pClusters3d
+
+pClusters2d <- plot_ly(
+  x = datosplot[,1],
+  y = datosplot[,2],
+  color = df_counts$plotly,
+  colors = colores,  # Utiliza la paleta Set3 modificada
+  type = "scatter",
+  mode = "markers",
+  marker = list(sizemode = 'area'),
+) %>%
+  layout(title = "Scatter 2D", xaxis = axx, yaxis = axy) %>%
+  config(displaylogo = FALSE)
+
+pClusters2d
+
+
+#######################
+# TABLAS PACIENTES ER #
+#######################
+
+df_ER <- df_counts
+# Filtrar solo los pacientes que no tienen NA en la columna prescatter
+df_ER <- df_ER[complete.cases(df_ER$robpac), ]
+
+#df_ER <- df_ER[complete.cases(df_ER$ResolvedValue), ]
+
+# Subconjugar dataExperiment usando los rownames de df_ER
+dataWithClusters <- dataExperiment[rownames(dataExperiment) %in% rownames(df_ER), ]
+dataWithClusters$ClusterGroup<-df_ER$robpac
+
+#dataWithClusters$ClusterGroup<-df_ER$ResolvedValue
+
+source("Funciones_tabla.R")
+
+#####
+# 1 # DF con medias/ proporciones e intervalos de confianza
+#####
+PREmpCIdf <- mpCIfunction(dataWithClusters, ClusterGroup)
+mpCIdf <- convertir_PREmpCIdf(PREmpCIdf)
+
+#####
+# 2 # DF con P.values
+#####
+Pvaluesdataframe <- data.frame(
+  Variable = c(names(chi_squared_results), names(kruskal_wallis_results)),
+  Test = c(rep("Chi-squared", length(chi_squared_results)),
+           rep("Kruskal-Wallis", length(kruskal_wallis_results))),
+  P_Value = c(sapply(chi_squared_results, function(res) if (!is.null(res)) res$p.value else NA),
+              sapply(kruskal_wallis_results, function(res) res$p.value))
+)
+p_values <- c(
+  sapply(chi_squared_results, function(res) if (!is.null(res)) res$p.value else NA),
+  sapply(kruskal_wallis_results, function(res) res$p.value)
+)
+Pvaluesdataframe <- data.frame(P_Value = p_values)
+Pvaluesdataframe <- head(Pvaluesdataframe, n = nrow(Pvaluesdataframe) - 1)
+
+#####
+# 3 # Integrar DFs en resultsTable
+#####
+rownames(Pvaluesdataframe) <- as.character(rownames(Pvaluesdataframe))
+rownames(mpCIdf) <- as.character(rownames(mpCIdf))
+order_Pvaluesdataframe <- match(rownames(mpCIdf), rownames(Pvaluesdataframe))
+
+# Fusionamos los dataframes por los rownames conservando el orden original de mpCIdf
+merged_df <- cbind(Pvaluesdataframe[order_Pvaluesdataframe, ], mpCIdf)
+merged_df <- merged_df[, c(2:ncol(merged_df), 1)]
+colnames(merged_df)[ncol(merged_df)] <- "P.Value"
+merged_df$P.Value <- round(merged_df$P.Value, 4)
+merged_df$P.Value <- ifelse(merged_df$P.Value < 0.05, paste0(merged_df$P.Value, "***"), merged_df$P.Value)
+
+##########################
+resultsTable<-merged_df #
+##########################
+
+#########################################
+# Poner la N del subgrupo en el colname #
+#########################################
+
+#################
+# MONTAR TABLAS #
+#################
+
+source("Tabla 3.R")
+
+#tTable
+#ITable
+#OTable
 
 
 
